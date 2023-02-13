@@ -1,0 +1,31 @@
+.venv
+base.db
+.idea
+__pycache__
+README.md
+
+# Data
+data/__pycache__
+data/config/__pycache__
+
+# Filters
+filters/__pycache__
+
+# Handlers
+handlers/__pycache__
+handlers/admin/__pycache__
+handlers/admin/functions/__pycache__
+handlers/admin/makups/__pycache__
+
+handlers/user/__pycache__
+handlers/user/functions/__pycache__
+handlers/user/makups/__pycache__
+
+# Patterns
+patterns/__pycache__
+
+# States
+states/__pycache__
+
+# Utils
+utils/__pycache__
