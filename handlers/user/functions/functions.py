@@ -1,3 +1,5 @@
+import types
+
 import utils
 import handlers.user.makups.makups as nav
 
@@ -7,15 +9,18 @@ from aiogram.dispatcher.filters import CommandStart
 from aiogram.dispatcher.filters import Text
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 
-from data.config.config import ADMINS_ID
+from data.config.config import ADMINS_ID, API_KEY
 
 from loader import dp, bot
 
 from handlers.admin import mainMenu as adminMainMenu
 
-from states.user import RegUser, HandAdditionLocation, DeleteState
+from patterns import show_saved_locations_text
+
+from states.user import RegUser, HandAdditionLocation, DeleteState, AutoAdditionLocation
 
 
+# Start
 @dp.message_handler(CommandStart(), state='*')
 async def start_bot(message: types.Message, state: FSMContext):
     if message.from_user.id in ADMINS_ID:
@@ -31,6 +36,7 @@ async def start_bot(message: types.Message, state: FSMContext):
     await RegUser.reg_user.set()
 
 
+# Registration
 @dp.message_handler(state=RegUser.reg_user, content_types=types.ContentType.TEXT)
 async def reg_user(message: types.Message, state: FSMContext):
     await state.reset_state(with_data=False)
@@ -45,6 +51,7 @@ async def reg_user(message: types.Message, state: FSMContext):
                                                               resize_keyboard=True))
 
 
+# show profile
 @dp.message_handler(commands=['showProfile'], state='*')
 async def show_profile(message: types.Message, state: FSMContext):
     user = utils.get_user(message.from_user.id)
@@ -88,11 +95,17 @@ async def show_locations_button_activate(callback_query: types.CallbackQuery, st
         await bot.send_message(callback_query.from_user.id, 'У вас пока что нет мест. Может попробует добавить?')
         return
 
-    location = data.get(callback_query.data)
+    location: dict = data.get(callback_query.data)
 
-    text = f"Название: {location.get('name', 'Отсутствует')}\n" + \
-           f"Адрес: {location.get('latitude')}, {location.get('longitude')} (пока что координаты )\n" + \
-           f"Описание: {location.get('info', 'Отсутствует')}\n"
+    default = 'Отсутствует'
+
+    name = location.get('name') or default
+    address = location.get('location') or default
+    link = location.get('link') or default
+    info = location.get('info') or default
+    more_info = location.get('info') or default
+
+    text = show_saved_locations_text.format(name, address, link, info, more_info)
 
     if location.get('img'):
         path = utils.get_project_path() + f"data/imgs/{callback_query.from_user.id}_{callback_query.data}.png"
@@ -104,7 +117,7 @@ async def show_locations_button_activate(callback_query: types.CallbackQuery, st
     keyboard = InlineKeyboardMarkup(resize_keyboard=True)
     keyboard.add(InlineKeyboardButton('Удалить', callback_data=f'delete_one {callback_query.data}'))
 
-    await bot.send_message(callback_query.from_user.id, text, reply_markup=keyboard)
+    await bot.send_message(callback_query.from_user.id, text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
 
 @dp.callback_query_handler(lambda c: c.data in [f'delete_one {i}' for i in range(1, 6)])
@@ -151,12 +164,87 @@ async def delete_state(message: types.Message, state: FSMContext):
     await state.finish()
 
 
-@dp.message_handler(content_types=types.ContentType.LOCATION)
+# Auto Locate
+@dp.message_handler(Text(equals='Определить по геолокации'))
+async def auto_location(message: types.Message, state: FSMContext):
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(KeyboardButton('Отправить геолокацию', request_location=True))
+    keyboard.add(KeyboardButton('Отменить'))
+
+    await message.answer('Отправьте ваше местоположение', reply_markup=keyboard)
+    await state.set_state(AutoAdditionLocation.location.state)
+
+
+@dp.message_handler(content_types=types.ContentType.LOCATION, state=AutoAdditionLocation.location)
 async def handle_location(message: types.Message, state: FSMContext):
     lat = message.location.latitude
     lon = message.location.longitude
-    reply = "latitude:  {}\nlongitude: {}".format(lat, lon)
-    await message.answer(reply, reply_markup=nav.mainMenu)
+
+    await state.update_data(location=(lon, lat))
+    await state.set_state(AutoAdditionLocation.name.state)
+
+    await message.answer(
+        'Что вас интересует. Имейте ввиду, чем точнее будет название, тем лучше будет результат.\n\n' +
+        'К примеру - Добрая столовая')
+
+
+@dp.message_handler(content_types=types.ContentType.TEXT, state=AutoAdditionLocation.name)
+async def setting_name_location(message: types.Message, state: FSMContext):
+    if message.text.__len__() > 50:
+        await message.answer('Извините, однако запрос слишком большой. Поробуйте сократить запрос.')
+        return
+
+    await state.update_data(name=message.text)
+
+    data = await state.get_data()
+    location = data.get('location')
+    lon = location[0]
+    lat = location[1]
+    places = utils.get_place(name=message.text, longitude=lon, latitude=lat, radius=1000, api_key=API_KEY)
+    print(places)
+
+    if not places:
+        await message.answer('По вашему запросу нечего не было найдено.')
+        await state.finish()
+        return
+
+    components = list(map(lambda place: utils.get_components(place), places))
+    print(components)
+    names = list(map(lambda component: (component.get('name'), '300м'), components)) # ????????
+    print(names)
+
+    await state.update_data(components=components)
+    await state.update_data(names=names)
+
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+
+    for name in names:
+        keyboard.add(KeyboardButton(' | '.join(name)))
+
+    await message.answer('Выберите тот, который хотите записать', reply_markup=keyboard)
+
+    await state.set_state(AutoAdditionLocation.components.state)
+
+
+@dp.message_handler(content_types=types.ContentType.TEXT, state=AutoAdditionLocation.components)
+async def getting_text(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    names = data.get('names')
+
+    if message.text not in names:
+        await message.answer('Такого места в списке нет.')
+        return
+
+    text = message.text.split(' | ')
+    components = data.get('components')
+    result = list(filter(lambda tup: (tup[0] == text[0]) and (tup[1] == text[1]), components))
+    # location = data.get('location')
+    # lon = location[0]
+    # lat = location[1]
+    #
+    # utils.add_data(message.from_user.id, longitude=lon, latitude=lat, **result[0])
+
+    await message.answer(utils.format_place(result[0]), parse_mode=types.ParseMode.HTML)
 
 
 @dp.message_handler(Text(equals='Добавить новое'))
@@ -212,7 +300,9 @@ async def hand_setting_location(message: types.Message, state: FSMContext):
 @dp.message_handler(state=HandAdditionLocation.img)
 async def hand_setting_img(message: types.Message, state: FSMContext):
     if (mes := message.text.lower()) == 'да':
-        await message.answer('Отправьте мне фото вашего места')
+        keybord = ReplyKeyboardMarkup(resize_keyboard=True)
+        keybord.add(KeyboardButton('Отменить'))
+        await message.answer('Отправьте мне фото вашего места', reply_markup=keybord)
         await state.set_state(HandAdditionLocation.img_.state)
 
     elif mes == 'нет':
@@ -332,7 +422,11 @@ async def send_commands(message: types.Message, state: FSMContext):
     await message.reply(text, reply_markup=nav.commands_keyboard)
 
 
-@dp.message_handler()
+@dp.message_handler(state='*')
 async def all_requests(message: types.Message, state: FSMContext):
     if message.text == 'Отменить':
         await message.reply('Отмена..', reply_markup=nav.mainMenu)
+        await state.finish()
+
+    else:
+        await message.answer('MainMenu', reply_markup=nav.mainMenu)

@@ -6,10 +6,10 @@ from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
 
-from data.config.config import ADMINS_ID
+from data import ADMINS_ID, API_KEY
 from loader import dp, bot
-from states.admin import Mail
-from utils.sql_commands import select_users
+from states import Mail
+from utils import select_users
 
 
 @dp.message_handler(Text(equals='mail'), user_id=ADMINS_ID, state='*')

@@ -1,1 +1,5 @@
-location_info = lambda lat, lon, name, img, info: ...
+show_saved_locations_text = "Название: {0}\n" + \
+                            "Адрес: {1}\n" + \
+                            "Ссылка на сайт: {2}\n" + \
+                            "Описание: {3}\n" + \
+                            "Дополнительная информация: {4}\n"

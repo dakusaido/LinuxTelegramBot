@@ -11,7 +11,7 @@ mainMenu.add(info_btn, how_to_use_btn)
 mainMenu.add(commands_btn)
 
 locationMenu = ReplyKeyboardMarkup(resize_keyboard=True)
-location_btn = KeyboardButton('Определить по геолокации', request_location=True)
+location_btn = KeyboardButton('Определить по геолокации')
 hand_btn = KeyboardButton('Добавить новое')
 back_btn = KeyboardButton('Отменить')
 
