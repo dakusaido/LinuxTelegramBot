@@ -1,10 +1,6 @@
 from aiogram.dispatcher.filters.state import StatesGroup, State
 
-__all__ = ['RegUser', 'HandAdditionLocation', 'DeleteState', 'AutoAdditionLocation']
-
-
-class RegUser(StatesGroup):
-    reg_user = State()
+__all__ = ['HandAdditionLocation', 'DeleteState', 'AutoAdditionLocation']
 
 
 class HandAdditionLocation(StatesGroup):
@@ -22,6 +18,7 @@ class AutoAdditionLocation(StatesGroup):
     name = State()
     components = State()
     names = State()
+
 
 class DeleteState(StatesGroup):
     delete_state = State()

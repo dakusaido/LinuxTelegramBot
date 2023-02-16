@@ -4,12 +4,20 @@ from asyncio import sleep
 
 from aiogram import types
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import Text
+from aiogram.dispatcher.filters import Text, CommandStart
 
+from handlers.admin.makups import mainMenu as adminMainMenu
 from data import ADMINS_ID, API_KEY
 from loader import dp, bot
 from states import Mail
 from utils import select_users
+
+
+@dp.message_handler(CommandStart(), user_id=ADMINS_ID, state='*')
+async def start(message: types.Message, state: FSMContext):
+    await state.finish()
+
+    await message.answer('Привет Владелец', reply_markup=adminMainMenu)
 
 
 @dp.message_handler(Text(equals='mail'), user_id=ADMINS_ID, state='*')

@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, JSON
 
 from utils.datbase import Base
 
+__all__ = ['User', 'UserLocations']
+
 
 class User(Base):
     __tablename__ = '__users__'

@@ -1,115 +1,126 @@
-import types
-
 import utils
-import handlers.user.makups.makups as nav
+import handlers.user.makups as nav
 
 from aiogram import types
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import CommandStart
+from aiogram.dispatcher.filters import CommandStart, Command
 from aiogram.dispatcher.filters import Text
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 
-from data.config.config import ADMINS_ID, API_KEY
+from data.config import ADMINS_ID, API_KEY
+
+from language_packages import LanguagePackage
 
 from loader import dp, bot
 
-from handlers.admin import mainMenu as adminMainMenu
-
 from patterns import show_saved_locations_text
 
-from states.user import RegUser, HandAdditionLocation, DeleteState, AutoAdditionLocation
+from states.user import *
 
+__all__ = ['dp', 'bot']
 
-# Start
+language_package = LanguagePackage()
+
+all_state = '*'
+default_language = 'ru'
+show_locations_button_numeric = {'1', '2', '3', '4', '5'}
+
+# ___________________________________ Start ___________________________________ #
 @dp.message_handler(CommandStart(), state='*')
 async def start_bot(message: types.Message, state: FSMContext):
-    if message.from_user.id in ADMINS_ID:
-        await message.answer(
-            'Привет, Владелец!', reply_markup=adminMainMenu
-        )
+    await state.finish()
+
+    language = language_package.get_language_package(message)
+
+    error_status = language.get('start_error_status')
+    success_status = language.get('start_success_status')
+
+    status = utils.register_user(tg_id=message.from_user.id,
+                                 first_name=message.from_user.first_name,
+                                 second_name=message.from_user.last_name)
+
+    if not status:
+        await message.answer(error_status)
         return
 
-    await message.answer(
-        'Привет!\nВведите свое имя и фамилию для регистрации'
-    )
-
-    await RegUser.reg_user.set()
+    await message.answer(success_status, reply_markup=nav.mainMenu)
 
 
-# Registration
-@dp.message_handler(state=RegUser.reg_user, content_types=types.ContentType.TEXT)
-async def reg_user(message: types.Message, state: FSMContext):
-    await state.reset_state(with_data=False)
-
-    if (user := message.text.split(' ')).__len__() == 2:
-        utils.register_user(tg_id=message.from_user.id, first_name=user[0], second_name=user[1])
-        await message.answer("Регистрация прошла успешно!", reply_markup=nav.mainMenu)
-
-    else:
-        await message.answer("Упс... Что-то пошло не так, попробуйте еще.",
-                             reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton('/start')]],
-                                                              resize_keyboard=True))
-
-
-# show profile
-@dp.message_handler(commands=['showProfile'], state='*')
+# ___________________________________ Show Profile ___________________________________ #
+@dp.message_handler(Command(['showProfile']), state='*')  # Not realized
 async def show_profile(message: types.Message, state: FSMContext):
     user = utils.get_user(message.from_user.id)
 
     await message.reply(' '.join(user))
 
 
+# ___________________________________ Addition Location ___________________________________ #
 @dp.callback_query_handler(lambda c: c.data == 'add_location')
 async def add_location(callback_query: types.CallbackQuery):
     await bot.answer_callback_query(callback_query.id)
 
-    await bot.send_message(callback_query.from_user.id,
-                           'Чтобы добавить новую локацию, вы можете использовать геопозицию или добавить место вручную',
+    language = language_package.get_language_package(callback_query)
+
+    add_location_text = language.get('add_location_text')
+
+    await bot.send_message(chat_id=callback_query.from_user.id,
+                           text=add_location_text,
                            reply_markup=nav.locationMenu)
 
 
+# ___________________________________ Show Location ___________________________________ #
 @dp.callback_query_handler(lambda c: c.data == 'show_locations')
 async def show_locations(callback_query: types.CallbackQuery):
     await bot.answer_callback_query(callback_query.id)
 
-    if not (data := utils.show_locations(callback_query.from_user.id)):
-        await bot.send_message(callback_query.from_user.id, 'У вас пока что нет мест. Может попробует добавить?')
+    user_id = callback_query.from_user.id
+    data = utils.get_locations(user_id)
+
+    language = language_package.get_language_package(callback_query)
+    doesnt_have_data = language.get('doesnt_have_data')
+
+    if not data:
+        await bot.send_message(user_id, doesnt_have_data)
         return
 
-    names = list(map(lambda key: (key, data.get(key).get('name')), data))
     keyboard = InlineKeyboardMarkup(resize_keyboard=True)
 
-    for (key, name) in names:
-        keyboard.add(InlineKeyboardButton(f"#{key} {name}", callback_data=key))
+    for key, value in data.items():
+        keyboard.add(InlineKeyboardButton(f"#{key} {value.get('name')}", callback_data=key))
 
-    await bot.send_message(callback_query.from_user.id, "Вот список тех мест, которые вы сохраняли",
-                           reply_markup=keyboard)
+    show_locations_list = language.get('show_locations_list')
+
+    await bot.send_message(user_id, show_locations_list, reply_markup=keyboard)
 
 
-@dp.callback_query_handler(lambda c: c.data in {'1', '2', '3', '4', '5'})
+@dp.callback_query_handler(lambda c: c.data in show_locations_button_numeric)
 async def show_locations_button_activate(callback_query: types.CallbackQuery, state: FSMContext):
-    await bot.answer_callback_query(callback_query.id)
     await state.finish()
+    await bot.answer_callback_query(callback_query.id)
 
-    if not (data := utils.show_locations(callback_query.from_user.id)):
-        await bot.send_message(callback_query.from_user.id, 'У вас пока что нет мест. Может попробует добавить?')
+    user_id = callback_query.from_user.id
+
+    if not (data := utils.get_locations(user_id)):
+        await bot.send_message(user_id, 'У вас пока что нет мест. Может попробуете добавить?')
         return
 
     location: dict = data.get(callback_query.data)
 
     default = 'Отсутствует'
 
-    name = location.get('name') or default
-    address = location.get('location') or default
-    link = location.get('link') or default
-    info = location.get('info') or default
-    more_info = location.get('info') or default
+    name: str = location.get('name') or default
+    address: str = location.get('location') or default
+    link: str = location.get('link') or default
+    info: str = location.get('info') or default
+    more_info: str = location.get('more_info') or default
 
     text = show_saved_locations_text.format(name, address, link, info, more_info)
 
     if location.get('img'):
-        path = utils.get_project_path() + f"data/imgs/{callback_query.from_user.id}_{callback_query.data}.png"
-        await bot.send_photo(callback_query.from_user.id, open(path, mode='rb'))
+        img_path = f"data/imgs/{user_id}_{callback_query.data}.png"
+        path = utils.get_project_path() + img_path
+
+        await bot.send_photo(user_id, open(path, mode='rb'))
 
     else:
         text += "Изображение: Отсутствует"
@@ -117,12 +128,12 @@ async def show_locations_button_activate(callback_query: types.CallbackQuery, st
     keyboard = InlineKeyboardMarkup(resize_keyboard=True)
     keyboard.add(InlineKeyboardButton('Удалить', callback_data=f'delete_one {callback_query.data}'))
 
-    await bot.send_message(callback_query.from_user.id, text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+    await bot.send_message(user_id, text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
 
 @dp.callback_query_handler(lambda c: c.data in [f'delete_one {i}' for i in range(1, 6)])
 async def delete_one(callback_query: types.CallbackQuery, state: FSMContext):
-    if not (data := utils.show_locations(callback_query.from_user.id)):
+    if not (data := utils.get_locations(callback_query.from_user.id)):
         await bot.send_message(callback_query.from_user.id, 'У вас пока что нет мест. Может попробует добавить?')
         return
 
@@ -210,7 +221,7 @@ async def setting_name_location(message: types.Message, state: FSMContext):
 
     components = list(map(lambda place: utils.get_components(place), places))
     print(components)
-    names = list(map(lambda component: (component.get('name'), '300м'), components)) # ????????
+    names = list(map(lambda component: (component.get('name'), '300м'), components))  # ????????
     print(names)
 
     await state.update_data(components=components)
@@ -320,9 +331,11 @@ async def hand_setting_img(message: types.Message, state: FSMContext):
 async def hand_setting_img_(message: types.Message, state: FSMContext):
     await state.update_data(img=True)
 
-    path = utils.get_project_path() + \
-           f'data/imgs/{message.from_user.id}_{utils.location_list_len(message.from_user.id) + 1}.png'
-    await message.photo[-1].download(destination_file=path)
+    imgs_path = f'data/imgs/{message.from_user.id}_{utils.location_list_len(message.from_user.id) + 1}.png'
+
+    path = utils.get_project_path() + imgs_path
+
+    await message.photo[0].download(destination_file=path)
 
     await message.answer('Будет информация для этого места?', reply_markup=ReplyKeyboardMarkup(resize_keyboard=True)
                          .add(KeyboardButton('Да'))
@@ -337,31 +350,14 @@ async def hand_setting_info(message: types.Message, state: FSMContext):
         await state.set_state(HandAdditionLocation.info_.state)
 
     elif mes == 'нет':
-        await message.answer('Сохранение...')
-        await state.set_state(HandAdditionLocation.cancel.state)
-
-        data = await state.get_data()
-        result = utils.add_data(tg_id=message.from_user.id,
-                                latitude=data.get('location')[0],
-                                longitude=data.get('location')[1],
-                                name=data.get('name'),
-                                img=data.get('img'),
-                                info=data.get('info'))
-
-        if not result:
-            await message.answer('Что-то пошло не так. Попробуйте еще', reply_markup=nav.mainMenu)
-
-        else:
-            await message.answer('Сохранено!', reply_markup=nav.mainMenu)
-
-        await state.finish()
+        await _saving_data(message, state)
 
     else:
         await message.reply('Некоректный ввод, выберите пожалуйста с клавиатуры.')
 
 
 @dp.message_handler(content_types=types.ContentType.TEXT, state=HandAdditionLocation.info_)
-async def hand_setting_info_(message: types.Message, state: FSMContext):
+async def _saving_data(message: types.Message, state: FSMContext):
     await state.update_data(info=message.text)
 
     await message.answer('Сохранение...')

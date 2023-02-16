@@ -6,6 +6,8 @@ from fake_useragent import UserAgent
 from typing import List, Dict, Any
 from patterns import show_saved_locations_text
 
+__all__ = ['get_place', 'format_place', 'get_components']
+
 
 def get_place(name: str, latitude: float, longitude: float, radius: int, api_key: str) -> List[Dict]:
     attr_is_not_valid = lambda attr: TypeError(f"attr {attr} is not valid")
@@ -22,7 +24,7 @@ def get_place(name: str, latitude: float, longitude: float, radius: int, api_key
     if not isinstance(api_key, str):
         raise attr_is_not_valid(api_key)
 
-    if len(name) > 15:
+    if len(name) > 40:
         raise Exception('Invalid name')
 
     return _get_place(name, latitude, longitude, radius, api_key)
@@ -102,12 +104,10 @@ def format_place(place: Dict[str, str | Dict]):
 
 
 if __name__ == '__main__':
-    example = {"address_comment": "цокольный этаж", "address_name": "проспект Ямашева, 51Б", "ads": {
-        "article": "Почему мы:<br /><br />•&nbsp;большой опыт — работаем с 2006 года;<br />•&nbsp;обеды от 100 руб., большой выбор блюд;<br />•&nbsp;вечерний комплекс на ужин за 500 руб., в который входит салат, второе, гарнир и напиток;<br />•&nbsp;уютная обстановка.<br />Кафе «Мастер вкуса» — это уютное место для проведения свадебных торжеств, товарищеских встреч, юбилейных банкетов, семейных и детских праздников. <br /><br />Войдя в наше кафе, вы поймете, что это то самое место для проведения вашего праздника, которое оставит у вас приятное впечатление, сэкономит ваши деньги и порадует вкусной домашней едой. <br /><br />Также есть приятный бонус для посетителей — напитки с собой*.<br /><br />*Подробности узнавайте у персонала заведения либо по телефону.",
-        "link": {"text": "Выбрать вид меню",
-                 "value": "http://link.2gis.com/1.2/B11FC7E4/webapi/20230201/project21/2956015536474329/null/vf6fEg6917G2J3A86143GGGGl1yj5446G6G40978789535AHuDfz9A298J6AG4I1G46J4JGJku6luv6A66292565961H2J47HH17f?http://cafemastervkusa.ru/menyu"},
-        "text": "Получи десерт в подарок при заказе от 350р."}, "id": "2956015536474329",
-               "name": "Мастер вкуса, кафе домашней еды", "type": "branch"}
+    example = {'address_name': 'улица Пушкина, 86', 'building_name': 'Национальная библиотека Республики Татарстан',
+               'full_name': 'Казань, Национальная библиотека Республики Татарстан', 'id': '70000001045588702',
+               'name': 'Национальная библиотека Республики Татарстан', 'purpose_name': 'Культурное учреждение',
+               'type': 'branch'}
 
     print(format_place(example))
     print(get_components(example))

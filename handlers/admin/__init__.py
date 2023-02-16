@@ -1,4 +1,3 @@
 from .functions import dp, bot
-from .makups.makups import mainMenu
+from .makups import *
 
-__all__ = ['dp', 'mainMenu', 'bot']

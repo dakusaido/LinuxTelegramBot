@@ -7,10 +7,10 @@ import utils
 from utils.datbase import session
 from utils.schemas import User, UserLocations
 
-from typing import Dict, List
+from typing import Dict, List, Any
 from functools import wraps
 
-__all__ = ['register_user', 'select_users', 'delete_user', 'get_user', 'show_locations', 'add_data',
+__all__ = ['register_user', 'select_users', 'delete_user', 'get_user', 'get_locations', 'add_data',
            'location_list_len', 'delete_data', 'delete_one']
 
 
@@ -36,7 +36,13 @@ def session_action(func):
 
 
 @session_action
-def register_user(tg_id: int, first_name: str, second_name: str):
+def register_user(tg_id: int, first_name: str, second_name: str) -> bool:
+
+    user = get_user(tg_id)
+
+    if user:
+        return False
+
     user = User(
         tg_id=tg_id,
         first_name=first_name,
@@ -44,27 +50,30 @@ def register_user(tg_id: int, first_name: str, second_name: str):
     )
     session.add(user)
 
+    return True
+
 
 @session_action
-def delete_user(tg_id):
+def delete_user(tg_id: int) -> None:
     user = session.query(User).filter(User.tg_id.like(tg_id)).one()
     session.delete(user)
 
 
-def select_users():
+def select_users() -> Any:
     users = session.query(User).all()
+
     return users
 
 
 @session_action
-def get_user(tg_id):
+def get_user(tg_id: int) -> Any:
     user = session.query(User).filter(User.tg_id.like(tg_id)).one()
 
     return user
 
 
 @session_action
-def register_new_data(tg_id: int, data: Dict):
+def register_new_data(tg_id: int, data: Dict) -> Any:
     user_location_data = UserLocations(
         tg_id=tg_id,
         data=json.dumps(data)
@@ -76,7 +85,7 @@ def register_new_data(tg_id: int, data: Dict):
 
 
 @session_action
-def add_data(tg_id: int, latitude: float, longitude: float, **kwargs):
+def add_data(tg_id: int, latitude: float, longitude: float, **kwargs) -> Any:
     if not isinstance(latitude, float):
         return False
 
@@ -94,7 +103,7 @@ def add_data(tg_id: int, latitude: float, longitude: float, **kwargs):
 
 
 @session_action
-def _add_data(tg_id: int, data: Dict):
+def _add_data(tg_id: int, data: Dict) -> Any:
     try:
         user_location_data = session.query(UserLocations).filter(UserLocations.tg_id.like(tg_id)).one()
 
@@ -116,7 +125,7 @@ def _add_data(tg_id: int, data: Dict):
 
 
 @session_action
-def show_locations(tg_id):
+def get_locations(tg_id: int) -> Any:
     try:
         user_location_data = session.query(UserLocations).filter(UserLocations.tg_id.like(tg_id)).one()
 
@@ -127,14 +136,14 @@ def show_locations(tg_id):
     return json.loads(user_location_data.data)
 
 
-def location_list_len(tg_id):
-    data = show_locations(tg_id)
+def location_list_len(tg_id: int) -> int:
+    data = get_locations(tg_id)
 
     return data.__len__()
 
 
 @session_action
-def delete_data(tg_id):
+def delete_data(tg_id: int) -> bool:
     try:
         user_location = session.query(UserLocations).filter(UserLocations.tg_id.like(tg_id)).one()
 
@@ -160,7 +169,7 @@ def delete_data(tg_id):
 
 
 @session_action
-def delete_one(tg_id: int, data: Dict, key: str):
+def delete_one(tg_id: int, data: Dict, key: str) -> bool:
     removed_data: dict = data.pop(key)
 
     new_data = {}
