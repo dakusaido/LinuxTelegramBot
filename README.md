@@ -1,2 +1,5 @@
 # LinuxTelegramBot
-Run <code>start.py</code> use Python 3.8+ and set BOT_TOKEN and API_KEY in <code>data/config/PRIVATE_KEYS.env</code>
+Instruction:
+  1) create <code>venv</code>
+  2) install <code>requirements.txt</code> use venv
+  3) Run <code>app.py</code> use venv
