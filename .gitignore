@@ -1,6 +1,9 @@
 base.db
 README.md
 
+# Private
+data/config/PRIVATE_KEYS.env
+
 # Data
 data/__pycache__
 data/config/__pycache__

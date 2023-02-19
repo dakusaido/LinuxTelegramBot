@@ -22,3 +22,11 @@ class AutoAdditionLocation(StatesGroup):
 
 class DeleteState(StatesGroup):
     delete_state = State()
+
+
+# class ShowLocations(StatesGroup):
+#     Location_1 = State()
+#     Location_2 = State()
+#     Location_3 = State()
+#     Location_4 = State()
+#     Location_5 = State()

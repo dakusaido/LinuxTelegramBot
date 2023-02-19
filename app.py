@@ -2,8 +2,8 @@ import logging
 
 from aiogram import executor
 
+from utils import create_base
 from handlers import dp, bot
-from utils.datbase import create_base
 from filters import setup
 
 

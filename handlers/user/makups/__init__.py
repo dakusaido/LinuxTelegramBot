@@ -1,1 +1,1 @@
-from .makups import *
+from .makups import Markups

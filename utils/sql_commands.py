@@ -67,6 +67,11 @@ def select_users() -> Any:
 
 @session_action
 def get_user(tg_id: int) -> Any:
+    """
+    :param tg_id:
+    :return Any[id, tg_id, second_name, first_name]
+    """
+
     user = session.query(User).filter(User.tg_id.like(tg_id)).one()
 
     return user

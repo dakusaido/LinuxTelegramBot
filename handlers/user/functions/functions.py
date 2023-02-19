@@ -1,5 +1,6 @@
 import utils
-import handlers.user.makups as nav
+
+from handlers.user.makups import Markups as nav
 
 from aiogram import types
 from aiogram.dispatcher import FSMContext
@@ -13,7 +14,7 @@ from language_packages import LanguagePackage
 
 from loader import dp, bot
 
-from patterns import show_saved_locations_text
+from patterns import format_pattern
 
 from states.user import *
 
@@ -24,13 +25,15 @@ language_package = LanguagePackage()
 all_state = '*'
 default_language = 'ru'
 show_locations_button_numeric = {'1', '2', '3', '4', '5'}
+delete_one_buttons = {f'delete_one {i}' for i in range(1, 6)}
+
 
 # ___________________________________ Start ___________________________________ #
 @dp.message_handler(CommandStart(), state='*')
 async def start_bot(message: types.Message, state: FSMContext):
     await state.finish()
 
-    language = language_package.get_language_package(message)
+    language = language_package.get_language_package(message.from_user.language_code)
 
     error_status = language.get('start_error_status')
     success_status = language.get('start_success_status')
@@ -43,7 +46,7 @@ async def start_bot(message: types.Message, state: FSMContext):
         await message.answer(error_status)
         return
 
-    await message.answer(success_status, reply_markup=nav.mainMenu)
+    await message.answer(success_status, reply_markup=nav.mainMenu(language))
 
 
 # ___________________________________ Show Profile ___________________________________ #
@@ -51,7 +54,7 @@ async def start_bot(message: types.Message, state: FSMContext):
 async def show_profile(message: types.Message, state: FSMContext):
     user = utils.get_user(message.from_user.id)
 
-    await message.reply(' '.join(user))
+    await message.reply(f"{user.first_name} {user.second_name}")
 
 
 # ___________________________________ Addition Location ___________________________________ #
@@ -59,24 +62,25 @@ async def show_profile(message: types.Message, state: FSMContext):
 async def add_location(callback_query: types.CallbackQuery):
     await bot.answer_callback_query(callback_query.id)
 
-    language = language_package.get_language_package(callback_query)
+    language = language_package.get_language_package(callback_query.from_user.language_code)
 
     add_location_text = language.get('add_location_text')
 
     await bot.send_message(chat_id=callback_query.from_user.id,
                            text=add_location_text,
-                           reply_markup=nav.locationMenu)
+                           reply_markup=nav.locationMenu(language))
 
 
 # ___________________________________ Show Location ___________________________________ #
 @dp.callback_query_handler(lambda c: c.data == 'show_locations')
-async def show_locations(callback_query: types.CallbackQuery):
+async def show_locations(callback_query: types.CallbackQuery, state: FSMContext):
+    await state.finish()
     await bot.answer_callback_query(callback_query.id)
 
     user_id = callback_query.from_user.id
     data = utils.get_locations(user_id)
 
-    language = language_package.get_language_package(callback_query)
+    language = language_package.get_language_package(callback_query.from_user.language_code)
     doesnt_have_data = language.get('doesnt_have_data')
 
     if not data:
@@ -100,50 +104,54 @@ async def show_locations_button_activate(callback_query: types.CallbackQuery, st
 
     user_id = callback_query.from_user.id
 
-    if not (data := utils.get_locations(user_id)):
-        await bot.send_message(user_id, 'У вас пока что нет мест. Может попробуете добавить?')
-        return
-
+    data = utils.get_locations(user_id)
     location: dict = data.get(callback_query.data)
 
-    default = 'Отсутствует'
+    language = language_package.get_language_package(callback_query.from_user.language_code)
+    show_saved_locations_text = language.get('show_saved_locations_text')
 
-    name: str = location.get('name') or default
-    address: str = location.get('location') or default
-    link: str = location.get('link') or default
-    info: str = location.get('info') or default
-    more_info: str = location.get('more_info') or default
-
-    text = show_saved_locations_text.format(name, address, link, info, more_info)
+    text = format_pattern(show_saved_locations_text, **location)
+    remove = language.get('remove')
 
     if location.get('img'):
-        img_path = f"data/imgs/{user_id}_{callback_query.data}.png"
+        button_num = callback_query.data
+
+        img_path = f"data/imgs/{user_id}_{button_num}.png"
         path = utils.get_project_path() + img_path
 
         await bot.send_photo(user_id, open(path, mode='rb'))
 
-    else:
-        text += "Изображение: Отсутствует"
-
     keyboard = InlineKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(InlineKeyboardButton('Удалить', callback_data=f'delete_one {callback_query.data}'))
+    keyboard.add(InlineKeyboardButton(remove, callback_data=f'delete_one {callback_query.data}'))
 
     await bot.send_message(user_id, text, reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
 
-@dp.callback_query_handler(lambda c: c.data in [f'delete_one {i}' for i in range(1, 6)])
+@dp.callback_query_handler(lambda c: c.data in delete_one_buttons)
 async def delete_one(callback_query: types.CallbackQuery, state: FSMContext):
-    if not (data := utils.get_locations(callback_query.from_user.id)):
-        await bot.send_message(callback_query.from_user.id, 'У вас пока что нет мест. Может попробует добавить?')
+    await state.finish()
+    await bot.answer_callback_query(callback_query.id)
+
+    language = language_package.get_language_package(callback_query.from_user.language_code)
+    doesnt_have_data = language.get('doesnt_have_data')
+    maybe_deleted = language.get('maybe_delete')
+    success_location_deleted = language.get('success_location_deleted')
+
+    user_id = callback_query.from_user.id
+    location = utils.get_locations(user_id)
+
+    if not location:
+        await bot.send_message(user_id, doesnt_have_data)
         return
 
-    if not utils.delete_one(callback_query.from_user.id, data, callback_query.data.split()[-1]):
-        await bot.send_message(callback_query.from_user.id,
-                               'Что-то пошло не так. Возможно вы уже удаляли раннее эту локацию')
+    button_prefix = callback_query.data.split()[-1]
+    deleted = utils.delete_one(user_id, location, button_prefix)
+
+    if not deleted:
+        await bot.send_message(user_id, maybe_deleted)
         return
 
-    await bot.send_message(callback_query.from_user.id,
-                           'Ваша локация была успешно удалена!')
+    await bot.send_message(user_id, success_location_deleted)
 
 
 @dp.callback_query_handler(lambda c: c.data == 'reset_list')
@@ -151,26 +159,46 @@ async def reset_list(callback_query: types.CallbackQuery, state: FSMContext):
     await state.finish()
     await bot.answer_callback_query(callback_query.id)
 
-    await bot.send_message(callback_query.from_user.id, "Вы уверены, что хотите все удалить?",
-                           reply_markup=ReplyKeyboardMarkup(resize_keyboard=True)
-                           .add('Да')
-                           .add('Нет'))
+    user_id = callback_query.from_user.id
+
+    language = language_package.get_language_package(callback_query.from_user.language_code)
+    are_you_sure = language.get('are_you_sure')
+    yes = language.get('yes')
+    no = language.get('no')
+
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(yes)
+    keyboard.add(no)
+
+    await bot.send_message(user_id, are_you_sure, reply_markup=keyboard)
 
     await state.set_state(DeleteState.delete_state.state)
 
 
 @dp.message_handler(content_types=types.ContentType.TEXT, state=DeleteState.delete_state)
 async def delete_state(message: types.Message, state: FSMContext):
-    if message.text.lower() == 'да':
-        if utils.delete_data(message.from_user.id):
-            await message.answer("Все местоположения были успешно удалены!", reply_markup=nav.mainMenu)
+    message_text = message.text
+    user_id = message.from_user.id
+
+    language = language_package.get_language_package(message.from_user.language_code)
+    yes = language.get('yes')
+    no = language.get('no')
+    success_all_location_deleted = language.get('success_all_location_deleted')
+    doesnt_have_data = language.get('doesnt_have_data')
+    cancel = language.get('canceling')
+
+    if message_text == yes:
+
+        deleted = utils.delete_data(user_id)
+
+        if deleted:
+            await message.answer(success_all_location_deleted, reply_markup=nav.mainMenu(language))
 
         else:
-            await message.answer("Упс... Что-то пошло не так, возможно вы ранее не создавали местоположения",
-                                 reply_markup=nav.mainMenu)
+            await message.answer(doesnt_have_data, reply_markup=nav.mainMenu(language))
 
-    else:
-        await message.answer('Отмена...', reply_markup=nav.mainMenu)
+    elif message_text == no:
+        await message.answer(cancel, reply_markup=nav.mainMenu(language))
 
     await state.finish()
 
@@ -184,6 +212,12 @@ async def auto_location(message: types.Message, state: FSMContext):
 
     await message.answer('Отправьте ваше местоположение', reply_markup=keyboard)
     await state.set_state(AutoAdditionLocation.location.state)
+
+
+@dp.message_handler(content_types=types.ContentType.TEXT, state=AutoAdditionLocation.location)
+async def another(message: types.Message, state: FSMContext):
+    await state.finish()
+    await all_requests(message, state)
 
 
 @dp.message_handler(content_types=types.ContentType.LOCATION, state=AutoAdditionLocation.location)
@@ -201,6 +235,8 @@ async def handle_location(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=types.ContentType.TEXT, state=AutoAdditionLocation.name)
 async def setting_name_location(message: types.Message, state: FSMContext):
+    language = language_package.get_language_package(message.from_user.language_code)
+
     if message.text.__len__() > 50:
         await message.answer('Извините, однако запрос слишком большой. Поробуйте сократить запрос.')
         return
@@ -209,63 +245,91 @@ async def setting_name_location(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     location = data.get('location')
-    lon = location[0]
     lat = location[1]
+    lon = location[0]
     places = utils.get_place(name=message.text, longitude=lon, latitude=lat, radius=1000, api_key=API_KEY)
-    print(places)
 
     if not places:
-        await message.answer('По вашему запросу нечего не было найдено.')
+        await message.answer('По вашему запросу нечего не было найдено.',
+                             reply_markup=nav.mainMenu(language))
         await state.finish()
         return
 
-    components = list(map(lambda place: utils.get_components(place), places))
-    print(components)
-    names = list(map(lambda component: (component.get('name'), '300м'), components))  # ????????
-    print(names)
+    components = utils.get_many_components(places)
+    components = utils.add_distance(components, location)
+    components = utils.get_five_elements(components)
 
-    await state.update_data(components=components)
-    await state.update_data(names=names)
+    pattern_text = language.get('show_saved_locations_text')
 
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    cur_component = utils.get_cur_component(components, 0)
+    cur_component.update(cur_component_num=1)
+    text, component_lat, component_lon = utils.get_component_materials(cur_component, pattern_text)
 
-    for name in names:
-        keyboard.add(KeyboardButton(' | '.join(name)))
+    location_img = await bot.send_location(message.from_user.id, latitude=component_lat, longitude=component_lon)
+    msg = await message.answer(text, reply_markup=nav.showLocation(language))
 
-    await message.answer('Выберите тот, который хотите записать', reply_markup=keyboard)
+    location_img_id = location_img.message_id
+    msg_id = msg.message_id
 
-    await state.set_state(AutoAdditionLocation.components.state)
+    await state.update_data(components=components, cur_component_num=0,
+                            location_img_id=location_img_id, msg_id=msg_id)
+
+    await state.set_state(AutoAdditionLocation.name.state)
 
 
-@dp.message_handler(content_types=types.ContentType.TEXT, state=AutoAdditionLocation.components)
-async def getting_text(message: types.Message, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data in {'back', 'next'}, state=AutoAdditionLocation.name)
+async def display_locations(callback_query: types.CallbackQuery, state: FSMContext):
+    await bot.answer_callback_query(callback_query.id)
+
     data = await state.get_data()
-    names = data.get('names')
+    user_id = callback_query.from_user.id
+    language = language_package.get_language_package(callback_query.from_user.language_code)
 
-    if message.text not in names:
-        await message.answer('Такого места в списке нет.')
-        return
+    cur_component_num = data.get('cur_component_num')
 
-    text = message.text.split(' | ')
+    if callback_query.data == 'back':
+        if cur_component_num < 1:
+            return
+        cur_component_num -= 1
+
+    else:
+        if cur_component_num > 3:
+            return
+        cur_component_num += 1
+
     components = data.get('components')
-    result = list(filter(lambda tup: (tup[0] == text[0]) and (tup[1] == text[1]), components))
-    # location = data.get('location')
-    # lon = location[0]
-    # lat = location[1]
+    location_img_id = data.get('location_img_id')
+    msg_id = data.get('msg_id')
+
+    pattern_text = language.get('show_saved_locations_text')
+
+    cur_component = utils.get_cur_component(components, cur_component_num)
+    cur_component.update(cur_component_num=cur_component_num + 1)
+    text, component_lat, component_lon = utils.get_component_materials(cur_component, pattern_text)
+
+    # await bot.edit_message_live_location(latitude=component_lat,
+    #                                      longitude=component_lon,
+    #                                      chat_id=user_id,
+    #                                      message_id=location_img_id)
     #
-    # utils.add_data(message.from_user.id, longitude=lon, latitude=lat, **result[0])
 
-    await message.answer(utils.format_place(result[0]), parse_mode=types.ParseMode.HTML)
+    msg = await bot.edit_message_text(text, user_id, msg_id, reply_markup=nav.showLocation(language))
 
+    msg_id = msg.message_id
 
+    await state.update_data(msg_id=msg_id, cur_component_num=cur_component_num)
+
+# ___________________________________ HandSetting Location ___________________________________ #
 @dp.message_handler(Text(equals='Добавить новое'))
 async def add_new_location(message: types.Message, state: FSMContext):
     await state.finish()
 
+    language = language_package.get_language_package(message.from_user.language_code)
+
     if utils.location_list_len(message.from_user.id) > 4:
         await message.answer(
             'У вас слишком много сохраненных мест! Удалите лишьнее, чтобы дальше сохранять места!',
-            reply_markup=nav.mainMenu)
+            reply_markup=nav.mainMenu(language))
         return
 
     await message.answer('Введите название вашего места',
@@ -277,9 +341,11 @@ async def add_new_location(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=types.ContentType.TEXT, state=HandAdditionLocation.name)
 async def hand_setting_name(message: types.Message, state: FSMContext):
+    language = language_package.get_language_package(message.from_user.language_code)
+
     if message.text == 'Отменить':
         await state.finish()
-        await message.answer('Действие отменено', reply_markup=nav.mainMenu)
+        await message.answer('Действие отменено', reply_markup=nav.mainMenu(language))
         return
 
     await state.update_data(name=message.text)
@@ -330,12 +396,13 @@ async def hand_setting_img(message: types.Message, state: FSMContext):
 @dp.message_handler(content_types=types.ContentType.PHOTO, state=HandAdditionLocation.img_)
 async def hand_setting_img_(message: types.Message, state: FSMContext):
     await state.update_data(img=True)
+    await message.answer('Сохранение...')
 
     imgs_path = f'data/imgs/{message.from_user.id}_{utils.location_list_len(message.from_user.id) + 1}.png'
 
     path = utils.get_project_path() + imgs_path
 
-    await message.photo[0].download(destination_file=path)
+    await message.photo[-1].download(destination_file=path)
 
     await message.answer('Будет информация для этого места?', reply_markup=ReplyKeyboardMarkup(resize_keyboard=True)
                          .add(KeyboardButton('Да'))
@@ -360,6 +427,8 @@ async def hand_setting_info(message: types.Message, state: FSMContext):
 async def _saving_data(message: types.Message, state: FSMContext):
     await state.update_data(info=message.text)
 
+    language = language_package.get_language_package(message.from_user.language_code)
+
     await message.answer('Сохранение...')
     await state.set_state(HandAdditionLocation.cancel.state)
 
@@ -372,10 +441,10 @@ async def _saving_data(message: types.Message, state: FSMContext):
                             info=data.get('info'))
 
     if not result:
-        await message.answer('Что-то пошло не так. Попробуйте еще', reply_markup=nav.mainMenu)
+        await message.answer('Что-то пошло не так. Попробуйте еще', reply_markup=nav.mainMenu(language))
 
     else:
-        await message.answer('Сохранено!', reply_markup=nav.mainMenu)
+        await message.answer('Сохранено!', reply_markup=nav.mainMenu(language))
 
     await state.finish()
 
@@ -383,7 +452,10 @@ async def _saving_data(message: types.Message, state: FSMContext):
 @dp.message_handler(Text(equals='Отменить'), state=HandAdditionLocation)
 async def closing(message: types.Message, state: FSMContext):
     await state.finish()
-    await message.answer('Действие отменено', reply_markup=nav.mainMenu)
+
+    language = language_package.get_language_package(message.from_user.language_code)
+
+    await message.answer('Действие отменено', reply_markup=nav.mainMenu(language))
 
 
 @dp.message_handler(state=HandAdditionLocation)
@@ -414,15 +486,19 @@ asd
 
 @dp.message_handler(Text(equals='Команды'), state='*')
 async def send_commands(message: types.Message, state: FSMContext):
+    language = language_package.get_language_package(message.from_user.language_code)
+
     text = 'Info'
-    await message.reply(text, reply_markup=nav.commands_keyboard)
+    await message.reply(text, reply_markup=nav.commands(language))
 
 
 @dp.message_handler(state='*')
 async def all_requests(message: types.Message, state: FSMContext):
+    language = language_package.get_language_package(message.from_user.language_code)
+
     if message.text == 'Отменить':
-        await message.reply('Отмена..', reply_markup=nav.mainMenu)
+        await message.reply('Отмена..', reply_markup=nav.mainMenu(language))
         await state.finish()
 
     else:
-        await message.answer('MainMenu', reply_markup=nav.mainMenu)
+        await message.answer('MainMenu', reply_markup=nav.mainMenu(language))
