@@ -1,4 +1,5 @@
 import re
+import typing
 
 from aiogram import types
 from aiogram.dispatcher.filters import BoundFilter
@@ -10,13 +11,29 @@ class PrivateChatFilter(BoundFilter):
 
 
 class DeleteOneKey(BoundFilter):
-    delete_one_keys_pattern = re.compile(r'(delete_one [1-5])')
 
-    async def check(self, message: types.Message) -> bool:
-        return bool(self.delete_one_keys_pattern.findall(message.text))
+    def __init__(self, pattern: re.Pattern):
+
+        if not isinstance(pattern, re.Pattern):
+            raise TypeError('pattern should be re.Pattern')
+
+        self.delete_one_key_pattern = pattern
+
+    async def check(self, callback_query: types.CallbackQuery) -> bool:
+        return bool(self.delete_one_key_pattern.findall(callback_query.data))
 
 
-if __name__ == '__main__':
-    delete_one_keys_pattern = re.compile(r'(delete_one [1-5])')
-    text = 'delete_one 2'
-    print(bool(delete_one_keys_pattern.findall(text)))
+class ShowLocationButtons(BoundFilter):
+    pass
+
+
+class CallbackQueryFilter(BoundFilter):
+
+    def __init__(self, callback_query_data: typing.Union[typing.Iterable, str]):
+        if isinstance(callback_query_data, str):
+            self.callback_query_data = [callback_query_data]
+
+        self.callback_query_data = callback_query_data
+
+    async def check(self, callback_query: types.CallbackQuery) -> bool:
+        return callback_query.data in self.callback_query_data

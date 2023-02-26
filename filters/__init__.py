@@ -1,6 +1,9 @@
 from aiogram import Dispatcher
-from .filters import PrivateChatFilter
+from .filters import PrivateChatFilter, DeleteOneKey, CallbackQueryFilter
+
+__all__ = ['PrivateChatFilter', 'DeleteOneKey', 'CallbackQueryFilter']
 
 
 def setup(dp: Dispatcher):
-    dp.filters_factory.bind(PrivateChatFilter)
+    for filter_ in [PrivateChatFilter, DeleteOneKey, CallbackQueryFilter]:
+        dp.filters_factory.bind(filter_)

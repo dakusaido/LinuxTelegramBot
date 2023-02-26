@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 
@@ -7,28 +8,30 @@ import utils
 from utils.datbase import session
 from utils.schemas import User, UserLocations
 
-from typing import Dict, List, Any
+from typing import Dict
 from functools import wraps
 
 __all__ = ['register_user', 'select_users', 'delete_user', 'get_user', 'get_locations', 'add_data',
            'location_list_len', 'delete_data', 'delete_one']
+sleep_time = 0.5
 
 
 def session_action(func):
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         session.connection()
         try:
-            result = func(*args, **kwargs)
+            result = await func(*args, **kwargs)
             session.commit()
 
         except IntegrityError:
             session.rollback()
-            return False
+            print('ads')
+            return
 
         except Exception as e:
             print(e)
-            return False
+            return
 
         return result
 
@@ -36,9 +39,8 @@ def session_action(func):
 
 
 @session_action
-def register_user(tg_id: int, first_name: str, second_name: str) -> bool:
-
-    user = get_user(tg_id)
+async def register_user(tg_id: int, first_name: str, second_name: str) -> bool:
+    user = await get_user(tg_id)
 
     if user:
         return False
@@ -54,35 +56,42 @@ def register_user(tg_id: int, first_name: str, second_name: str) -> bool:
 
 
 @session_action
-def delete_user(tg_id: int) -> None:
+async def delete_user(tg_id: int):
+    await asyncio.sleep(sleep_time)
+
     user = session.query(User).filter(User.tg_id.like(tg_id)).one()
     session.delete(user)
 
 
-def select_users() -> Any:
+@session_action
+async def select_users():
+    await asyncio.sleep(sleep_time)
+
     users = session.query(User).all()
 
     return users
 
 
 @session_action
-def get_user(tg_id: int) -> Any:
+async def get_user(tg_id: int):
     """
     :param tg_id:
     :return Any[id, tg_id, second_name, first_name]
     """
-
+    await asyncio.sleep(sleep_time)
     user = session.query(User).filter(User.tg_id.like(tg_id)).one()
 
     return user
 
 
 @session_action
-def register_new_data(tg_id: int, data: Dict) -> Any:
+async def register_new_data(tg_id: int, data: Dict):
     user_location_data = UserLocations(
         tg_id=tg_id,
         data=json.dumps(data)
     )
+
+    await asyncio.sleep(sleep_time)
 
     session.add(user_location_data)
 
@@ -90,31 +99,33 @@ def register_new_data(tg_id: int, data: Dict) -> Any:
 
 
 @session_action
-def add_data(tg_id: int, latitude: float, longitude: float, **kwargs) -> Any:
-    if not isinstance(latitude, float):
-        return False
-
-    if not isinstance(longitude, float):
-        return False
+async def add_data(tg_id: int, **kwargs):
+    await asyncio.sleep(sleep_time)
 
     for key in kwargs.keys():
         if not isinstance(key, str):
             return False
 
-    new_dict = dict(tg_id=tg_id, location=(longitude, latitude))
+    new_dict = dict(tg_id=tg_id)
     new_dict.update(kwargs)
 
-    return _add_data(tg_id, new_dict)
+    result = await _add_data(tg_id, new_dict)
+
+    return result
 
 
 @session_action
-def _add_data(tg_id: int, data: Dict) -> Any:
+async def _add_data(tg_id: int, data: Dict):
+    await asyncio.sleep(sleep_time)
+
     try:
         user_location_data = session.query(UserLocations).filter(UserLocations.tg_id.like(tg_id)).one()
 
     except Exception as e:
         print(e)
-        return register_new_data(tg_id, {1: data})
+        result = await register_new_data(tg_id, {1: data})
+
+        return result
 
     user_dict = json.loads(user_location_data.data)
 
@@ -130,7 +141,9 @@ def _add_data(tg_id: int, data: Dict) -> Any:
 
 
 @session_action
-def get_locations(tg_id: int) -> Any:
+async def get_locations(tg_id: int):
+    await asyncio.sleep(sleep_time)
+
     try:
         user_location_data = session.query(UserLocations).filter(UserLocations.tg_id.like(tg_id)).one()
 
@@ -141,14 +154,16 @@ def get_locations(tg_id: int) -> Any:
     return json.loads(user_location_data.data)
 
 
-def location_list_len(tg_id: int) -> int:
-    data = get_locations(tg_id)
+async def location_list_len(tg_id: int):
+    data = await get_locations(tg_id)
 
     return data.__len__()
 
 
 @session_action
-def delete_data(tg_id: int) -> bool:
+async def delete_data(tg_id: int):
+    await asyncio.sleep(sleep_time)
+
     try:
         user_location = session.query(UserLocations).filter(UserLocations.tg_id.like(tg_id)).one()
 
@@ -174,7 +189,9 @@ def delete_data(tg_id: int) -> bool:
 
 
 @session_action
-def delete_one(tg_id: int, data: Dict, key: str) -> bool:
+async def delete_one(tg_id: int, data: Dict, key: str):
+    await asyncio.sleep(sleep_time)
+
     removed_data: dict = data.pop(key)
 
     new_data = {}
@@ -195,8 +212,6 @@ def delete_one(tg_id: int, data: Dict, key: str) -> bool:
         return False
 
     user_location.data = json.dumps(new_data)
-
-    path = utils.get_project_path() + f'data/imgs/{tg_id}_'
 
     if removed_data.get('img'):
         if os.path.exists(path + key + '.png'):

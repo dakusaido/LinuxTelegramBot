@@ -1,9 +1,11 @@
+import asyncio
+
 import aiogram.utils.markdown as markdown
 
-from requests import get
-from json import dump
-from fake_useragent import UserAgent
 from typing import List, Dict, Any, Iterable
+
+import aiohttp
+
 from language_packages import LanguagePackage
 
 from geopy.distance import distance
@@ -15,30 +17,29 @@ __all__ = ['get_place', 'format_place', 'get_components', 'get_distance', 'get_m
            'get_cur_component', 'get_component_materials']
 
 language_package = LanguagePackage()
+sleep_time = 0.5
 
 
-def get_place(name: str, latitude: float, longitude: float, radius: int, api_key: str) -> List[Dict]:
-    attr_is_not_valid = lambda attr: TypeError(f"attr {attr} is not valid")
-
+async def get_place(name: str, latitude: float, longitude: float, radius: int, api_key: str):
     if not isinstance(name, str):
-        raise attr_is_not_valid(name)
+        raise TypeError(f"attr {name} is not valid")
 
     if not isinstance(latitude, float):
-        raise attr_is_not_valid(latitude)
+        raise TypeError(f"attr {latitude} is not valid")
 
     if not isinstance(longitude, float):
-        raise attr_is_not_valid(longitude)
+        raise TypeError(f"attr {longitude} is not valid")
 
     if not isinstance(api_key, str):
-        raise attr_is_not_valid(api_key)
+        raise TypeError(f"attr {api_key} is not valid")
 
     if len(name) > 40:
         raise Exception('Invalid name')
 
-    return _get_place(name, latitude, longitude, radius, api_key)
+    return await _get_place(name, latitude, longitude, radius, api_key)
 
 
-def _get_place(name: str, latitude: float, longitude: float, radius: int, api_key: str) -> List[Dict[str, Any]] | bool:
+async def _get_place(name: str, latitude: float, longitude: float, radius: int, api_key: str):
     source = 'https://catalog.api.2gis.com/3.0/items'
 
     params = {
@@ -49,41 +50,43 @@ def _get_place(name: str, latitude: float, longitude: float, radius: int, api_ke
         'fields': 'items.point'
     }
 
-    response = get(source, params=params).json()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(source, params=params) as resp:
+            response = await resp.json()
 
-    code = response.get('meta').get('code')
-    print(code)
-    print(response)
+            code = response.get('meta').get('code')
 
-    if code != 200:
-        return False
+            if code != 200:
+                return False
 
-    result = response.get('result')
+            result = response.get('result')
 
-    if not result:
-        return False
+            if not result:
+                return False
 
-    items = result.get('items')
+            items = result.get('items')
 
-    if not items:
-        return False
+            if not items:
+                return False
 
-    return items
+            return items
 
 
-def get_components(place: Dict[str, Any]) -> Dict[str, Any]:
+async def get_components(place: Dict[str, Any]):
+    await asyncio.sleep(sleep_time)
+
     default = 'Отсутствует'
 
     address_comment = place.get('address_comment')  # 2
     address_name = place.get('address_name')  # 1
 
     ads = place.get('ads')
-    id_ = place.get('id') or default
+    # id_ = place.get('id') or default
     name = place.get('name') or default  # 0
     point = place.get('point')
-    type_ = place.get('type') or default
+    # type_ = place.get('type') or default
 
-    link = default
+    # link = default
     article = default
     text = default
     href_link = default
@@ -108,12 +111,20 @@ def get_components(place: Dict[str, Any]) -> Dict[str, Any]:
     return dict(name=name, location=location, point=point, link=href_link, info=article, more_info=text)
 
 
-def get_many_components(places: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return list(map(lambda place: get_components(place), places))
-
-
-def get_names_and_distances(components: List[Dict[str, Any]], position: Iterable[float]) -> List[Dict[str, Any]]:
+async def get_many_components(places: List[Dict[str, Any]]):
     result = []
+
+    for place in places:
+        component = await get_components(place)
+        result.append(component)
+
+    return result
+
+
+async def get_names_and_distances(components: List[Dict[str, Any]], position: Iterable[float]):
+    result = []
+
+    await asyncio.sleep(sleep_time)
 
     for component in components:
         point = component.get('point')
@@ -130,7 +141,7 @@ def get_names_and_distances(components: List[Dict[str, Any]], position: Iterable
     return result
 
 
-def add_distance(components: List[Dict[str, Any]], position: Iterable[float]) -> List[Dict[str, Any]]:
+async def add_distance(components: List[Dict[str, Any]], position: Iterable[float]):
     for component in components:
         point = component.get('point')
         lat = point.get('lat')
@@ -142,7 +153,7 @@ def add_distance(components: List[Dict[str, Any]], position: Iterable[float]) ->
     return components
 
 
-def sort_names_and_distance(names: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def sort_names_and_distance(names: List[Dict[str, Any]]):
     return sorted(names, key=lambda dict_: dict_.get('distance'))
 
 
@@ -150,15 +161,12 @@ def get_five_elements(names: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sort_names_and_distance(names)[:5]
 
 
-# def get_component(name: str, distance_: int, components: ) -> List[Dict[str, Any]]:
-#     return list
+async def format_place(place: Dict[str, str | Dict], lang: str):
+    language = await language_package.get_language_package(lang)
+    text = language.get('show_saved_locations_text')
+    components = await get_components(place)
 
-def format_place(place: Dict[str, str | Dict], lang: str):
-    language = language_package.get_language_package(lang)
-    TEXT = language.get('show_saved_locations_text')
-    components = get_components(place)
-
-    return format_pattern(TEXT, **components)
+    return format_pattern(text, **components)
 
 
 def get_distance(position_1: Iterable[float], position_2: Iterable[float]):
@@ -169,8 +177,8 @@ def get_cur_component(components: List[Dict[str, Any]], index: int) -> Dict[str,
     return components[index]
 
 
-def get_component_materials(component: Dict[str, Any], pattern_text: str):
-    text = format_pattern(pattern_text, **component)
+async def get_component_materials(component: Dict[str, Any], pattern_text: str):
+    text = await format_pattern(pattern_text, **component)
 
     point = component.get('point')
     component_lat = point.get('lat')
